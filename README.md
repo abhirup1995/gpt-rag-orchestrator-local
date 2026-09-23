@@ -1,0 +1,155 @@
+<!-- 
+page_type: sample
+languages:
+- azdeveloper
+- powershell
+- bicep
+products:
+- azure
+- azure-ai-foundry
+- azure-openai
+- azure-ai-search
+urlFragment: GPT-RAG
+name: Multi-repo ChatGPT and Enterprise data with Azure OpenAI and AI Search
+description: GPT-RAG core is a Retrieval-Augmented Generation pattern running in Azure, using Azure AI Search for retrieval and Azure OpenAI large language models to power ChatGPT-style and Q&A experiences.
+-->
+# GPT-RAG Orchestrator
+
+Part of the [GPT-RAG](https://github.com/Azure/gpt-rag) solution.
+
+The **GPT-RAG Orchestrator** service is an agentic orchestration layer built on Azure AI Foundry Agent Service and the Microsoft Agent Framework. It enables agent-based RAG workflows by coordinating multiple specialized agents—each with a defined role—to collaboratively generate accurate, context-aware responses for complex user queries.
+
+## Local profile
+
+This replica retains the complete production orchestrator architecture and adds an environment-based local profile. See [docs/local-run.md](docs/local-run.md) for local API startup, Azure-connected local execution, and production deployment guidance.
+
+### Available Strategies
+
+| Key | Strategy | Description |
+|-----|----------|-------------|
+| `single_agent_rag` | Single Agent RAG | RAG strategy using Azure AI Foundry Agent Service v2 with dynamic routing and direct LLM bypass. |
+| `maf_agent_service` | MAF + Agent Service | Microsoft Agent Framework with Azure AI Foundry Agent Service v2 for server-side threads and tool orchestration, with request-scoped client lifecycle for stable async cleanup. |
+| `maf_lite` | MAF Lite | Microsoft Agent Framework with direct Azure OpenAI model access (no Agent Service dependency). |
+| `mcp` | MCP | Model Context Protocol strategy using Semantic Kernel. |
+| `nl2sql` | NL2SQL | Natural language to SQL translation strategy for structured data queries. |
+
+### NL2SQL datasource security
+
+> [!IMPORTANT]
+> When using the `nl2sql` strategy, configure every SQL Server, Azure SQL, or Fabric SQL datasource with a least-privilege read-only principal. Grant only the `SELECT` permissions needed for approved schemas, tables, or views, and do not use admin, owner, contributor, ingestion, or write-capable identities for NL2SQL query execution. The orchestrator validates generated SQL before execution, but database permissions remain the primary security boundary.
+
+### Retrieval backends
+
+The `rag` and `multimodal_rag` strategies use Foundry IQ's Knowledge Base retrieve API. Alongside the existing native `azureBlob` and `searchIndex` (Pattern B) knowledge sources, the orchestrator can optionally query a Microsoft 365 **Work IQ** knowledge source for grounded answers over the caller's Outlook mail, Teams chats, and SharePoint / OneDrive files.
+
+Work IQ is opt-in and off by default:
+
+- Set `WORK_IQ_ENABLED=true` and `WORK_IQ_KNOWLEDGE_SOURCE_NAME=<your Work IQ knowledge source>` to enable it.
+- Work IQ requires a per-user on-behalf-of token. When the OBO token is missing the Work IQ source is skipped with a warning; managed-identity fallback is never used for remote knowledge source kinds.
+- ACL is enforced natively by Microsoft 365 via the forwarded user token — no `filterAddOn` is emitted for Work IQ.
+- Remote kinds can take 40–60 seconds end-to-end; set `FOUNDRY_IQ_MAX_RUNTIME_SECONDS` (default `120`) to control the retrieve runtime ceiling. The value is only emitted when a remote kind is enabled, so Pattern A / Pattern B requests stay byte-identical.
+
+Work IQ is currently a gated preview and requires admin consent plus a Work IQ knowledge source provisioned on the same Azure AI Search service. See the enablement guide in the [Azure/GPT-RAG](https://github.com/Azure/GPT-RAG) repo for the end-to-end setup ([issue #543](https://github.com/Azure/GPT-RAG/issues/543)).
+
+## Documentation
+
+For comprehensive information about GPT-RAG, including architecture details, configuration guides, best practices, troubleshooting resources, deployment guidance, customization options, and advanced usage scenarios, please refer to the [official project documentation](https://azure.github.io/GPT-RAG/).
+
+## Dashboard
+
+The orchestrator ships with an optional admin dashboard mounted at `/dashboard`. It exposes two tabs:
+
+- **Overview**: conversation counts for today, the last 7 days, and the last 30 days; a conversations-over-time chart; average user turns per conversation; and the number of active users.
+- **Conversations**: a paginated, newest-first list of conversations across all users, with a detail view that renders the full message history.
+
+The data comes from the existing conversation/history Cosmos DB container used by the orchestrator (`CONVERSATIONS_DATABASE_CONTAINER` in `DATABASE_NAME`). The dashboard is read-only.
+
+**Enabling the dashboard.** It is disabled by default. Set the App Configuration value `ENABLE_DASHBOARD=true` to mount it. When `ENABLE_DASHBOARD=false` (the default), the `/dashboard` HTML page and every `/api/dashboard/*` route are not registered at all.
+
+**Access control.** When authentication is on (`OAUTH_AZURE_AD_TENANT_ID` is configured), the entire `/api/dashboard/*` surface — except the small `/api/dashboard/version` endpoint used for the header chip — requires the caller's bearer token to include the `Admin` app role. The `/dashboard` HTML page itself is served openly so the SPA can load and render its own access-denied state on a 403 response. When authentication is off, the dashboard is open like the rest of the app in development.
+
+**Token scope.** The frontend must request an access token with the orchestrator's own API scope (`api://<client_id>/...`), not a Microsoft Graph scope. App roles are issued in the `roles` claim of an access token only when the token is requested for the application that defines those roles, so a Graph-scoped token will not surface the `Admin` role and every dashboard call will return 403.
+
+**Building the dashboard bundle.** Production builds happen automatically as part of the `Dockerfile` (an MCR base image stage using Node.js 20 runs `npm run build` and copies the static assets into `src/static`). For local development you can run the Vite dev server with hot reload:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The dev server proxies `/api` to `http://localhost:9000`, which is where the orchestrator listens locally.
+
+## Prerequisites
+
+Before deploying the application, you must provision the infrastructure as described in the [GPT-RAG](https://github.com/azure/gpt-rag) repo. This includes creating all necessary Azure resources required to support the application runtime.
+
+<details markdown="block">
+<summary>Click to view <strong>software</strong> prerequisites</summary>
+<br>
+The machine used to customize and or deploy the service should have:
+
+* Azure CLI: [Install Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)
+* Azure Developer CLI (optional, if using azd): [Install azd](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd)
+* Git: [Download Git](https://git-scm.com/downloads)
+* Python 3.12: [Download Python 3.12](https://www.python.org/downloads/release/python-3120/)
+* Docker CLI: [Install Docker](https://docs.docker.com/get-docker/)
+* VS Code (recommended): [Download VS Code](https://code.visualstudio.com/download)
+</details>
+
+## How to deploy the orchestrator service
+
+Make sure you're logged in to Azure before anything else:
+
+```bash
+az login
+```
+
+### Deploying the app with azd (recommended)
+
+Initialize the template:
+```shell
+azd init -t azure/gpt-rag-orchestrator 
+```
+> [!IMPORTANT]
+> Use the **same environment name** with `azd init` as in the infrastructure deployment to keep components consistent.
+
+Update env variables then deploy:
+```shell
+azd env refresh
+azd deploy 
+```
+> [!IMPORTANT]
+> Run `azd env refresh` with the **same subscription** and **resource group** used in the infrastructure deployment.
+
+Aqui está uma versão mais clara, direta e consistente da instrução:
+
+### Deploying the app with a shell script
+
+To deploy using a script, first clone the repository, set the App Configuration endpoint, and then run the deployment script.
+
+##### PowerShell (Windows)
+
+```powershell
+git clone https://github.com/Azure/gpt-rag-orchestrator.git
+$env:APP_CONFIG_ENDPOINT = "https://<your-app-config-name>.azconfig.io"
+cd gpt-rag-orchestrator
+.\scripts\deploy.ps1
+```
+
+## Found an Issue?
+
+Encountered an error or bug? Help us improve the quality of this accelerator by reporting issues or suggesting enhancements on our **[GitHub Issues page](https://github.com/Azure/GPT-RAG/issues)**. Your feedback helps make GPT-RAG better for everyone!
+
+## Previous Releases
+
+> [!NOTE]  
+> For earlier versions, use the corresponding release in the GitHub repository (e.g., v1.0.0 for the initial version).
+
+## 🤝 Contributing
+
+We appreciate contributions! See [CONTRIBUTING](https://github.com/Azure/gpt-rag/blob/main/CONTRIBUTING.md) for guidelines on submitting pull requests.
+
+## Trademarks
+
+This project may contain trademarks or logos. Authorized use of Microsoft trademarks or logos must follow [Microsoft’s Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general). Modified versions must not imply sponsorship or cause confusion. Third-party trademarks are subject to their own policies.
