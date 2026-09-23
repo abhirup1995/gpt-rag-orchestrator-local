@@ -47,6 +47,14 @@ class AppConfigClient:
 
         endpoint = os.getenv("APP_CONFIG_ENDPOINT")
 
+        # Prepare credentials up front — connectors (e.g. SearchClient, CosmosDBClient)
+        # read cfg.credential/cfg.aiocredential directly and must get a usable
+        # credential chain even when running purely off local env vars with no
+        # Azure App Configuration endpoint configured.
+        identity_manager = get_identity_manager()
+        self.credential = identity_manager.get_credential()
+        self.aiocredential = identity_manager.get_aio_credential()
+
         # If there's no endpoint configured, skip remote config entirely.
         if not endpoint:
             logging.info("Azure App Configuration skipped: no APP_CONFIG_ENDPOINT set. Remote keys will not be fetched.")
@@ -58,11 +66,6 @@ class AppConfigClient:
             _endpoint_host = endpoint.replace("https://", "").replace("http://", "").split("/")[0]
         except Exception:
             _endpoint_host = "<unknown>"
-
-        # Prepare credentials for endpoint-based access
-        identity_manager = get_identity_manager()
-        self.credential = identity_manager.get_credential()
-        self.aiocredential = identity_manager.get_aio_credential()
 
         # Prefer more specific labels first.
         loaded_labels = ["orchestrator", "gpt-rag-orchestrator", "gpt-rag", "<no-label>"]
