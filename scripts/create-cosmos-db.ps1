@@ -19,11 +19,12 @@ $databaseName = "gptrag"
 $developerPrincipalId = "98718db9-5e9d-4c63-9462-f4eac680a0ab"
 
 Write-Host "Creating Cosmos SQL database '$databaseName' on account '$accountName'..."
+# No --throughput: the account is serverless, which does not support
+# database-level (shared) throughput -- capacity is automatic per request.
 az cosmosdb sql database create `
     --account-name $accountName `
     --resource-group $resourceGroup `
-    --name $databaseName `
-    --throughput 400
+    --name $databaseName
 
 Write-Host "Creating container 'conversations' (partition key /conversation_id)..."
 az cosmosdb sql container create `
