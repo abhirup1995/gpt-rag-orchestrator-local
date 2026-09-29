@@ -21,6 +21,9 @@ class GenAIModelClient:
 
         self.foundry_project_endpoint = cfg.get("AI_FOUNDRY_PROJECT_ENDPOINT")
         self.model_endpoint = cfg.get("AI_FOUNDRY_ACCOUNT_ENDPOINT")
+        # Embeddings can live on a separate Azure OpenAI account than chat.
+        # Falls back to model_endpoint when both models share one account.
+        self.embedding_endpoint = cfg.get("EMBEDDING_ACCOUNT_ENDPOINT", "") or self.model_endpoint
         self.chat_deployment = cfg.get("CHAT_DEPLOYMENT_NAME")
         self.embedding_deployment = cfg.get("EMBEDDING_DEPLOYMENT_NAME")
         self.openai_api_version = cfg.get("OPENAI_API_VERSION", "2025-04-01-preview")
@@ -60,6 +63,17 @@ class GenAIModelClient:
             azure_ad_token_provider=token_provider,
             max_retries=self.max_retries
         )
+
+        # Separate embeddings client, only built distinctly when the account differs
+        if self.embedding_endpoint != self.model_endpoint:
+            self.embeddings_client = AsyncAzureOpenAI(
+                api_version=self.openai_api_version,
+                azure_endpoint=self.embedding_endpoint,
+                azure_ad_token_provider=token_provider,
+                max_retries=self.max_retries
+            )
+        else:
+            self.embeddings_client = self.openai_client
 
         # tokenizer for truncation/estimation
         self._tokenizer = tiktoken.encoding_for_model(self.tokenizer_model_name)
@@ -106,7 +120,7 @@ class GenAIModelClient:
 
         if self.embeddings_backend == "azure_openai":
             try:
-                resp = await self.openai_client.embeddings.create(
+                resp = await self.embeddings_client.embeddings.create(
                     input=text,
                     model=self.embedding_deployment
                 )
