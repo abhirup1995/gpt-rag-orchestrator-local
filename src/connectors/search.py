@@ -588,13 +588,14 @@ class SearchClient:
             # Default to not empty if we can't tell, to avoid false bypasses
             return False
 
-    async def search_knowledge_base(self, query: str, store_id: Optional[str] = None, letter_code: Optional[str] = None) -> str:
+    async def search_knowledge_base(self, query: str, store_id: Optional[str] = None, letter_code: Optional[str] = None, document_date: Optional[str] = None) -> str:
         """
         Searches the knowledge base for relevant documents using hybrid search.
 
         :param query: The search query to find relevant documents.
         :param store_id: Optional 5-digit 7-Eleven store ID to narrow results to a specific store.
         :param letter_code: Optional single-letter owner/location code accompanying store_id.
+        :param document_date: Optional reporting month in ISO format "YYYY-MM-01" (e.g. "2026-05-01" for May 2026).
         :return: Search results as a JSON string containing a list of documents with title, link and content.
         """
         # Backend selector (Azure/GPT-RAG#526). The default 'ai_search' keeps the
@@ -630,6 +631,8 @@ class SearchClient:
                 filter_parts.append("store_id eq '{0}'".format(store_id.replace("'", "''")))
             if letter_code:
                 filter_parts.append("letter_code eq '{0}'".format(letter_code.replace("'", "''")))
+            if document_date:
+                filter_parts.append("document_date eq '{0}'".format(document_date.replace("'", "''")))
             search_body["filter"] = " and ".join(filter_parts)
 
             # Generate embeddings for vector/hybrid search
