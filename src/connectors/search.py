@@ -588,11 +588,13 @@ class SearchClient:
             # Default to not empty if we can't tell, to avoid false bypasses
             return False
 
-    async def search_knowledge_base(self, query: str) -> str:
+    async def search_knowledge_base(self, query: str, store_id: Optional[str] = None, letter_code: Optional[str] = None) -> str:
         """
         Searches the knowledge base for relevant documents using hybrid search.
 
         :param query: The search query to find relevant documents.
+        :param store_id: Optional 5-digit 7-Eleven store ID to narrow results to a specific store.
+        :param letter_code: Optional single-letter owner/location code accompanying store_id.
         :return: Search results as a JSON string containing a list of documents with title, link and content.
         """
         # Backend selector (Azure/GPT-RAG#526). The default 'ai_search' keeps the
@@ -611,7 +613,7 @@ class SearchClient:
             # Build search body according to search approach. custom_metadata is
             # only added to the select when the flag is on; otherwise the select
             # string stays exactly as before so pre-#487 indexes keep working.
-            select_fields = "title,content,url,filepath,chunk_id"
+            select_fields = "title,content,url,filepath,chunk_id,store_id,letter_code,document_date"
             if self.include_metadata_in_context:
                 select_fields += ",custom_metadata"
             search_body: Dict[str, Any] = {
@@ -621,7 +623,14 @@ class SearchClient:
 
             # Filter by conversation scope: this chat + shared corpora (general/global).
             # Never query without a filter: an unset id would return every chunk in the index.
-            search_body["filter"] = build_conversation_filter(self._conversation_id, field_name="conversationId")
+            filter_parts = [
+                "({0})".format(build_conversation_filter(self._conversation_id, field_name="conversationId"))
+            ]
+            if store_id:
+                filter_parts.append("store_id eq '{0}'".format(store_id.replace("'", "''")))
+            if letter_code:
+                filter_parts.append("letter_code eq '{0}'".format(letter_code.replace("'", "''")))
+            search_body["filter"] = " and ".join(filter_parts)
 
             # Generate embeddings for vector/hybrid search
             if self.search_approach in ["vector", "hybrid"] and self.aoai_client:
