@@ -14,8 +14,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from dependencies import get_config  # noqa: E402
+# Import connectors before dependencies, mirroring main.py's import order --
+# dependencies.py imports connectors.appconfig partway through its own body,
+# and connectors/__init__.py imports cosmosdb.py which imports dependencies
+# back. Importing dependencies first here triggers that cycle while
+# dependencies is still mid-initialization.
 from connectors.identity_manager import get_identity_manager  # noqa: E402
+from dependencies import get_config  # noqa: E402
 from strategies import agent_provider_v2  # noqa: E402
 from strategies.single_agent_rag_strategy_v2 import (  # noqa: E402
     _render_agent_instructions,
