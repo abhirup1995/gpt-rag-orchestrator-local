@@ -85,16 +85,23 @@ class Orchestrator:
             span.set_attribute('conversation_id', self.conversation_id)
 
             # 1) Load or create our conversation document in Cosmos
-            # For anonymous users, use anonymous-{conversation_id} as partition key to avoid hot partitions
-            # For authenticated users, use their principal_id
+            # The 'conversations' container's partition key path is /conversation_id (confirmed
+            # via `az cosmosdb sql container show`) -- it must be used verbatim as both the
+            # partition key value AND a field on the document body, not a derived
+            # "anonymous-{id}"/principal_id value. Using any other value here means every
+            # get_document() looks in a partition no document is ever stored in, so it always
+            # reports "not found" and a fresh Foundry thread gets created every single turn,
+            # silently resetting conversation memory on every request.
             if not self.conversation_id:
                 self.conversation_id = str(uuid.uuid4())
-                partition_key = f"anonymous-{self.conversation_id}" if self.principal_id == "anonymous" else self.principal_id
+                partition_key = self.conversation_id
+                owner_id = f"anonymous-{self.conversation_id}" if self.principal_id == "anonymous" else self.principal_id
                 default_name = ask[:50] if ask else "Untitled Conversation"
                 conversation = {
                     "id": self.conversation_id,
+                    "conversation_id": self.conversation_id,
                     "name": default_name,
-                    "principal_id": partition_key,
+                    "principal_id": owner_id,
                     "lastUpdated": datetime.now(timezone.utc).isoformat(),
                 }
                 # Awaited (not fire-and-forget): the response must not complete until this
@@ -104,7 +111,8 @@ class Orchestrator:
                     self.database_container, self.conversation_id, conversation, partition_key=partition_key
                 )
             else:
-                partition_key = f"anonymous-{self.conversation_id}" if self.principal_id == "anonymous" else self.principal_id
+                partition_key = self.conversation_id
+                owner_id = f"anonymous-{self.conversation_id}" if self.principal_id == "anonymous" else self.principal_id
                 conversation = await self.database_client.get_document(
                     self.database_container, self.conversation_id, partition_key=partition_key
                 )
@@ -113,8 +121,9 @@ class Orchestrator:
                     default_name = ask[:50] if ask else "Untitled Conversation"
                     conversation = {
                         "id": self.conversation_id,
+                        "conversation_id": self.conversation_id,
                         "name": default_name,
-                        "principal_id": partition_key,
+                        "principal_id": owner_id,
                         "lastUpdated": datetime.now(timezone.utc).isoformat(),
                     }
                     await self.database_client.create_document(
@@ -192,8 +201,8 @@ class Orchestrator:
             raise ValueError("Conversation ID is required to save feedback")
 
         # Retrieve existing conversation document
-        # For anonymous users, use anonymous-{conversation_id} as partition key
-        partition_key = f"anonymous-{self.conversation_id}" if self.principal_id == "anonymous" else self.principal_id
+        # Partition key path is /conversation_id (see stream_response for details).
+        partition_key = self.conversation_id
         conversation = await self.database_client.get_document(
             self.database_container,
             self.conversation_id,
