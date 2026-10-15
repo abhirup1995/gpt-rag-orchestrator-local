@@ -97,9 +97,12 @@ class Orchestrator:
                     "principal_id": partition_key,
                     "lastUpdated": datetime.now(timezone.utc).isoformat(),
                 }
-                asyncio.create_task(self.database_client.create_document(
+                # Awaited (not fire-and-forget): the response must not complete until this
+                # write is durable, otherwise a fast next turn can race ahead of it, see no
+                # document, and recreate one -- dropping thread_id and resetting conversation memory.
+                await self.database_client.create_document(
                     self.database_container, self.conversation_id, conversation, partition_key=partition_key
-                ))
+                )
             else:
                 partition_key = f"anonymous-{self.conversation_id}" if self.principal_id == "anonymous" else self.principal_id
                 conversation = await self.database_client.get_document(
@@ -114,9 +117,9 @@ class Orchestrator:
                         "principal_id": partition_key,
                         "lastUpdated": datetime.now(timezone.utc).isoformat(),
                     }
-                    asyncio.create_task(self.database_client.create_document(
+                    await self.database_client.create_document(
                         self.database_container, self.conversation_id, conversation, partition_key=partition_key
-                    ))
+                    )
 
             # Search/RAG scoping: conversation_id is finalized here when the client omitted it on create().
             # Keep strategy in sync so retrieval filters by this id (not None).
