@@ -39,14 +39,20 @@ class IdentityManager:
         mi_cred = ManagedIdentityCredential(client_id=self.client_id) if self.client_id else ManagedIdentityCredential()
         self._credential = ChainedTokenCredential(
             mi_cred,
-            AzureCliCredential()
+            # Default process_timeout (10s) can be too short locally if endpoint
+            # security tooling adds scan overhead to the az CLI subprocess call.
+            # Bumped to 60s: 30s still recurrently timed out on this VDI even
+            # though a standalone `az account get-access-token` only takes ~6s,
+            # suggesting intermittent subprocess-spawn overhead (AV/EDR scanning),
+            # not genuine network latency.
+            AzureCliCredential(process_timeout=60)
         )
 
         # Async credentials
         async_mi_cred = AsyncManagedIdentityCredential(client_id=self.client_id) if self.client_id else AsyncManagedIdentityCredential()
         self._aio_credential = AsyncChainedTokenCredential(
             async_mi_cred,
-            AsyncAzureCliCredential()
+            AsyncAzureCliCredential(process_timeout=60)
         )
 
         self._initialized = True
