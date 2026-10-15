@@ -498,6 +498,13 @@ class SingleAgentRAGStrategyV2(BaseAgentStrategy):
         except Exception as e:
             err_msg = traceback.format_exc()
             logging.error(f"[Agent Flow V2] Streaming failed: {err_msg}")
+            # A failure mid-stream can leave a tool call pending in the Foundry
+            # thread with no matching output (e.g. the search tool raised before
+            # returning). Reusing that thread on the next turn then fails with
+            # "400 No tool output found for function call ...", permanently
+            # stuck until a new thread starts. Reset it so the next turn starts
+            # fresh instead of being stuck on this conversation forever.
+            conv["thread_id"] = None
             yield f"[ERROR in Streaming]: {e}"
 
         # Persist conversation history
