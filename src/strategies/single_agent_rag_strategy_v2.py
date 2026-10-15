@@ -30,17 +30,17 @@ from openai import BadRequestError
 DEFAULT_REUSABLE_AGENT_NAME = "gptrag-single-agent-rag"
 
 
-async def search_knowledge_base(query: str, store_id: str = None, letter_code: str = None) -> str:
+async def search_knowledge_base(query: str, store_code: str = None) -> str:
     """Search the knowledge base for documents relevant to the user's question.
 
     Use this whenever answering requires information from the indexed documents.
 
     Args:
         query: A natural-language search query describing the information needed.
-        store_id: Optional 5-digit 7-Eleven store ID (e.g. "14140"), when the question is
-            about a specific store. Only pass this once the user has provided it; do not guess.
-        letter_code: Optional single-letter owner/location code accompanying store_id
-            (e.g. "G" in "14140G"). Only pass this once the user has provided it; do not guess.
+        store_code: Optional combined store code exactly as the user typed it, e.g. "14140G"
+            (5-digit store ID followed directly by a single owner/location letter, no space).
+            Only pass this once the user has provided it; do not guess or split it yourself --
+            pass the whole code as-is and the tool parses it.
 
     Returns:
         Markdown-formatted excerpts of the most relevant documents, each with a
@@ -241,10 +241,10 @@ class SingleAgentRAGStrategyV2(BaseAgentStrategy):
         search_client = self.search_client
         format_results = self._format_search_results
 
-        async def _bound_search(query: str, store_id: str = None, letter_code: str = None) -> str:
+        async def _bound_search(query: str, store_code: str = None) -> str:
             self._apply_search_request_context()
             t_ret = time.time()
-            result = await search_client.search_knowledge_base(query=query, store_id=store_id, letter_code=letter_code)
+            result = await search_client.search_knowledge_base(query=query, store_code=store_code)
             logging.info(f"[Agent Flow V2] Retrieval tool executed in {time.time() - t_ret:.2f}s")
             return format_results(result)
 

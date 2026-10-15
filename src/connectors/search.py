@@ -1,6 +1,7 @@
 import aiohttp
 import logging
 import json
+import re
 import time
 import hashlib
 from typing import Optional, Any, Dict, List
@@ -588,13 +589,14 @@ class SearchClient:
             # Default to not empty if we can't tell, to avoid false bypasses
             return False
 
-    async def search_knowledge_base(self, query: str, store_id: Optional[str] = None, letter_code: Optional[str] = None) -> str:
+    async def search_knowledge_base(self, query: str, store_code: Optional[str] = None) -> str:
         """
         Searches the knowledge base for relevant documents using hybrid search.
 
         :param query: The search query to find relevant documents.
-        :param store_id: Optional 5-digit 7-Eleven store ID to narrow results to a specific store.
-        :param letter_code: Optional single-letter owner/location code accompanying store_id.
+        :param store_code: Optional combined store code as typed by the user, e.g. "13619J"
+            (5-digit store ID + single-letter owner/location code). Parsed server-side into
+            store_id/letter_code -- callers never split it themselves.
         :return: Search results as a JSON string containing a list of documents with title, link and content.
             Each document's ``document_date`` field reports the month its data covers -- use it to
             identify/confirm the correct month from the results rather than pre-filtering on it.
@@ -628,10 +630,15 @@ class SearchClient:
             filter_parts = [
                 "({0})".format(build_conversation_filter(self._conversation_id, field_name="conversationId"))
             ]
-            if store_id:
+            # The store code is a rigid 5-digit + 1-letter format (e.g. "13619J") -- parse it
+            # deterministically here rather than relying on the caller to split it correctly.
+            store_match = re.match(r"^\s*(\d{5})([A-Za-z])\s*$", store_code or "")
+            if store_match:
+                store_id, letter_code = store_match.group(1), store_match.group(2).upper()
                 filter_parts.append("store_id eq '{0}'".format(store_id.replace("'", "''")))
-            if letter_code:
                 filter_parts.append("letter_code eq '{0}'".format(letter_code.replace("'", "''")))
+            elif store_code:
+                logging.warning(f"[Retrieval] Could not parse store_code '{store_code}'; ignoring filter")
             search_body["filter"] = " and ".join(filter_parts)
 
             # Generate embeddings for vector/hybrid search
